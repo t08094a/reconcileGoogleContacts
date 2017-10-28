@@ -12,6 +12,7 @@ import gdata.gauth
 
 import oauth2client.client
 import oauth2client.file
+import oauth2client.tools
 
 
 def get_credentials():
@@ -55,6 +56,8 @@ def get_client():
 
     contact_client = gdata.contacts.client.ContactsClient(query)
     auth2token.authorize(contact_client)
+
+
 
     return contact_client
 
@@ -156,52 +159,98 @@ def getValueOfXmlElement(xmlElement, fieldName = None):
         return str(xmlElement)
 
 
-def update_contact_name(gd_client, contact_url):
+def updateEntries(feed, gd_client):
+    """Updates contact name of the given feed.
+            Args:
+              feed: A gdata.contacts.data.ContactsFeed
+              gd_client: the gdata.client.GDClient
+    """
+    if not feed:
+        return
 
-    print('update_contact_name: {}'.format(contact_url))
+    for entry in feed.entry:
+        update_contact_name(entry, gd_client)
 
-    # first retrieve the contact to modify from the api
-    entry = gd_client.GetContact(contact_url)
-    entry.name.full_name.text = 'full_name'
-    entry.name.given_name.text = 'given_name'
-    entry.name.family_name.text = 'family_name'
+    # feed can have siblings with more entries
+    nextLink = feed.GetNextLink()
 
-    # entry.name.additional_name = gdata.data.AdditionalName(text='') # 2. Vorname
-    # entry.name.name_prefix = gdata.data.NamePrefix(text='') # Vorsilbe
-    # entry.name.name_suffix = gdata.data.NameSuffix(text='') # Endsilbe
+    if nextLink:
+        nextFeed = gd_client.GetNext(feed)
 
-    ## Funktioniert nicht!
-    #entry.gender = gdata.contacts.Gender(value='male')
-    #entry.occupation = gdata.contacts.Occupation(text='Carpender')
+        if nextFeed:
+            updateEntries(nextFeed, gd_client)
 
-    #entry.etag = '*'
 
-    try:
-        updated_entry = gd_client.Update(entry)
-        print('Updated: {}'.format(updated_entry.updated.text))
-        return updated_entry
+def update_contact_name(entry, gd_client):
+    """Updates contact name of the given entry.
+            Args:
+              entry: A atom.Entry
+              gd_client: the gdata.client.GDClient
+    """
 
-    except gdata.client.RequestError, e:
-        if(e.status == 412):
-            # Etag mismatch: handle the exception
-            print('Error: Etag mismatch')
-            pass
-        elif(e.status == 401):
-            print('Error: 401')
-            pass
-    except AttributeError, e:
-        print('Error: {}'.format(e))
-        pass
+    #printEntry(entry)
 
-    return None
+    fullName = 'UNKNOWN'
+
+    if entry and entry.name and entry.name.full_name and entry.name.full_name.text:
+        fullName = entry.name.full_name.text.encode('utf-8')
+    else:
+        print('work on: {}'.format(fullName))
+
+    print('work on: {}'.format(fullName))
+
+    familyName = ''
+    givenName = ''
+    updateValue = ''
+
+    if entry.name and entry.name.family_name and entry.name.family_name.text:
+        familyName = entry.name.family_name.text.encode('utf-8').strip()
+    if entry.name and entry.name.given_name and entry.name.given_name.text:
+        givenName = entry.name.given_name.text.encode('utf-8').strip()
+
+    if familyName and givenName:
+        updateValue = '{}, {}'.format(familyName, givenName)
+    elif familyName:
+        updateValue = '{}'.format(familyName)
+    elif givenName:
+        updateValue = '{}'.format(givenName)
+    else:
+        print('\tno correct name to set found')
+        return
+
+    if entry.name.full_name.text.encode('utf-8') != updateValue or \
+       entry.title.text.encode('utf-8') != updateValue:
+
+        print('\tupdate name to {}'.format(updateValue))
+
+        entry.name.full_name.text = updateValue
+        entry.title.text = updateValue
+
+        try:
+            updated_entry = gd_client.Update(entry)
+            print('\tUpdated: {}'.format(updated_entry.updated.text))
+        except gdata.client.RequestError, e:
+            if (e.status == 412):
+                # Etag mismatch: handle the exception
+                print('\tError: Etag mismatch')
+            elif (e.status == 401):
+                print('\tError: 401')
+        except AttributeError, e:
+            print('\tError: {}'.format(e))
+
 
 def main():
     contact_client = get_client()  # type: gdata.contacts.client.ContactsClient
 
     feed = contact_client.GetContacts()
-    printEntries(feed)
+    account = feed.id.text
 
-    update_contact_name(contact_client, 'http://www.google.com/m8/feeds/contacts/testjochenfaehnlein%40gmail.com/base/52956ed38d319b0e')
+    print('=' * (len(account) + 17))
+    print('work on account: {}'.format(account))
+    print('=' * (len(account) + 17))
+
+    updateEntries(feed, contact_client)
+
 
 if __name__ == '__main__':
     main()
